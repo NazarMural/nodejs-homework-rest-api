@@ -89,6 +89,13 @@ router.post("/logout", authenticate, async (req, res, next) => {
   }
 });
 
-
+router.get("/current", authenticate, async (req, res) => {
+  try {
+    const { email, subscription } = req.user;
+    res.status(200).json({ email, subscription });
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;
