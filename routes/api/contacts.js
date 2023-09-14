@@ -1,28 +1,22 @@
 const express = require("express");
-const Joi = require("joi");
 
-const Contact = require("../../models/contact");
+const { authenticate } = require("../../middlewares");
+const { Contact, schemas } = require("../../models/contact");
 const { HttpError } = require("../../helpers");
 
 const router = express.Router();
 
-const addCshema = Joi.object({
-  name: Joi.string().required(),
-  email: Joi.string().required(),
-  phone: Joi.string().required(),
-  favorite: Joi.boolean().required(),
-});
-
-router.get("/", async (req, res, next) => {
+router.get("/", authenticate, async (req, res, next) => {
   try {
-    const result = await Contact.find();
+    const { _id: owner } = req.user;
+    const result = await Contact.find({ owner });
     res.json(result);
   } catch (error) {
     next(error);
   }
 });
 
-router.get("/:contactId", async (req, res, next) => {
+router.get("/:contactId", authenticate, async (req, res, next) => {
   try {
     const { contactId } = req.params;
     const result = await Contact.findById(contactId);
@@ -37,24 +31,25 @@ router.get("/:contactId", async (req, res, next) => {
   }
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", authenticate, async (req, res, next) => {
   try {
-    const { error } = addCshema.validate(req.body);
+    const { error } = schemas.addSchema.validate(req.body);
 
     if (error) {
       throw HttpError(400, error.message);
     }
 
-    const result = await Contact.create(req.body);
+    const { _id: owner } = req.user;
+    const result = await Contact.create({ ...req.body, owner });
     res.status(201).json(result);
   } catch (error) {
     next(error);
   }
 });
 
-router.put("/:contactId", async (req, res, next) => {
+router.put("/:contactId", authenticate, async (req, res, next) => {
   try {
-    const { error } = addCshema.validate(req.body);
+    const { error } = schemas.addSchema.validate(req.body);
 
     if (error) {
       throw HttpError(400, error.message);
@@ -75,10 +70,15 @@ router.put("/:contactId", async (req, res, next) => {
   }
 });
 
-router.patch("/:contactId/favorite", async (req, res, next) => {
+router.patch("/:contactId/favorite", authenticate, async (req, res, next) => {
   try {
     const { contactId } = req.params;
     const { favorite } = req.body;
+    const { error } = schemas.updatedFavotiteSchema.validate(req.body);
+
+    if (error) {
+      throw HttpError(400, error.message);
+    }
 
     if (typeof favorite === "undefined") {
       throw HttpError(400, "Missing field favorite");
@@ -100,9 +100,7 @@ router.patch("/:contactId/favorite", async (req, res, next) => {
   }
 });
 
-module.exports = router;
-
-router.delete("/:contactId", async (req, res, next) => {
+router.delete("/:contactId", authenticate, async (req, res, next) => {
   try {
     const { contactId } = req.params;
     const result = await Contact.findByIdAndDelete(contactId);
