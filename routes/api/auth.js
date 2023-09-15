@@ -1,14 +1,32 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const express = require("express");
-const router = express.Router();
+const gravatar = require("gravatar");
+const multer = require("multer");
+const path = require("path");
+const jimp = require("jimp");
+const fs = require("fs/promises");
 require("dotenv").config();
+
+const router = express.Router();
 
 const { User, schemas } = require("../../models/user");
 const { HttpError } = require("../../helpers");
 const { authenticate } = require("../../middlewares");
 
 const { SECRET_KEY } = process.env;
+
+const tempDir = path.join(__dirname, "../", "../", "temp");
+const avatarsDir = path.join(__dirname, "../", "../", "public", "avatars");
+
+const multerConfig = multer.diskStorage({
+  destination: tempDir,
+  filename: (req, file, cb) => {
+    cb(null, file.originalname);
+  },
+});
+
+const upload = multer({ storage: multerConfig });
 
 router.post("/register", async (req, res, next) => {
   try {
@@ -26,7 +44,14 @@ router.post("/register", async (req, res, next) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
-    const newUser = await User.create({ ...req.body, password: hashPassword });
+    const avatarURL = gravatar.url(email, { s: "200", r: "pg", d: "mm" });
+
+    const newUser = await User.create({
+      ...req.body,
+      password: hashPassword,
+      avatarURL,
+    });
+
     res.status(201).json({
       user: {
         email: newUser.email,
@@ -97,5 +122,39 @@ router.get("/current", authenticate, async (req, res) => {
     next(error);
   }
 });
+
+router.patch(
+  "/avatars",
+  authenticate,
+  upload.single("avatar"),
+  async (req, res, next) => {
+    try {
+      const { _id } = req.user;
+
+      if (!req.file) {
+        throw HttpError(400, "missing file");
+      }
+
+      const { path: tempUpload, originalname } = req.file;
+
+      const image = await jimp.read(tempUpload);
+      image.resize(250, 250);
+      await image.writeAsync(tempUpload);
+
+      const filename = `${_id}_${originalname}`;
+      const resultUpload = path.join(avatarsDir, filename);
+      await fs.rename(tempUpload, resultUpload);
+
+      const avatarURL = path.join("avatars", filename);
+      await User.findByIdAndUpdate(_id, { avatarURL });
+
+      res.json({
+        avatarURL,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 module.exports = router;
